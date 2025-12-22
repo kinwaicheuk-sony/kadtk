@@ -598,6 +598,113 @@ class CLAPModel(ModelLoader):
         x = np.clip(x, a_min=-1., a_max=1.)
         return (x * 32767.).astype(np.int16)
 
+class MusicFM(ModelLoader):
+    """
+    TODO
+    MusicFM model from https://github.com/minzwon/musicfm
+    """
+    
+    def __init__(self, type: Literal['audio', 'music'], audio_len: Optional[Union[float, int]] = None):
+        super().__init__(f"musicfm", 512, 48000, audio_len=audio_len)
+        self.type = type
+
+        if type == 'FMA':
+            url_dict = {'json': 'https://huggingface.co/minzwon/MusicFM/resolve/main/fma_stats.json',
+                        'pt': 'https://huggingface.co/minzwon/MusicFM/resolve/main/pretrained_fma.pt'}
+        elif type == 'MSD':
+            url_dict = {'json': 'https://huggingface.co/minzwon/MusicFM/resolve/main/msd_stats.json',
+                        'pt': 'https://huggingface.co/minzwon/MusicFM/resolve/main/pretrained_msd.pt'}
+
+        self.model_file = Path(__file__).parent / ".model-checkpoints" / url_dict['pt'].split('/')[-1]
+
+        # Download file if it doesn't exist
+        if not self.model_file.exists() or not (self.model_file.parent / url_dict['json'].split('/')[-1]).exists():
+            self.model_file.parent.mkdir(parents=True, exist_ok=True)
+            download_file(url_dict['pt'], self.model_file)
+            download_file(url_dict['json'], self.model_file.parent / url_dict['json'].split('/')[-1], progress=False)
+            
+
+        from kadtk.models.musicfm.model.musicfm_25hz import MusicFM25Hz
+        import transformers
+        if version.parse(transformers.__version__) >= version.parse("4.31.0") \
+            and version.parse(metaversion("laion_clap")) < version.parse("1.1.6"): 
+            self.patch_model_430(self.model_file)
+
+    def patch_model_430(self, file: Path):
+        """
+        Patch the model file to remove position_ids (will raise an error otherwise)
+        This is a new issue after the transformers 4.30.0 update
+        Please refer to https://github.com/LAION-AI/CLAP/issues/127 and https://github.com/LAION-AI/CLAP/pull/118
+        """
+        # Create a "patched" file when patching is done
+        patched = file.parent / f"{file.name}.patched.430"
+        if patched.exists():
+            return
+        
+        OFFENDING_KEY = "module.text_branch.embeddings.position_ids"
+        log.warning("Patching LAION-CLAP's model checkpoints")
+        
+        # Load the checkpoint from the given path
+        checkpoint = torch.load(file, map_location="cpu", weights_only=False)
+
+        # Extract the state_dict from the checkpoint
+        if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+            state_dict = checkpoint["state_dict"]
+        else:
+            state_dict = checkpoint
+
+        # Delete the specific key from the state_dict
+        if OFFENDING_KEY in state_dict:
+            del state_dict[OFFENDING_KEY]
+
+        # Save the modified state_dict back to the checkpoint
+        if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+            checkpoint["state_dict"] = state_dict
+
+        # Save the modified checkpoint
+        torch.save(checkpoint, file)
+        log.warning(f"Saved patched checkpoint to {file}")
+        
+        # Create a "patched" file when patching is done
+        patched.touch()
+        
+    def load_model(self):
+        import laion_clap
+
+        self.model = laion_clap.CLAP_Module(enable_fusion=False, amodel='HTSAT-tiny' if self.type == 'audio' else 'HTSAT-base')
+        self.model.load_ckpt(self.model_file)
+        self.model.to(self.device)
+
+    def _get_embedding(self, audio: np.ndarray) -> torch.Tensor:
+        audio = audio.reshape(1, -1)
+
+        # The int16-float32 conversion is used for quantization
+        audio = self.int16_to_float32(self.float32_to_int16(audio))
+
+        # Split the audio into 10s chunks with 1s hop
+        chunk_size = 10 * self.sr  # 10 seconds
+        hop_size = self.sr  # 1 second
+        chunks = [audio[:, i:i+chunk_size] for i in range(0, audio.shape[1], hop_size)]
+
+        # Calculate embeddings for each chunk
+        embeddings = []
+        for chunk in chunks:
+            with torch.no_grad():
+                chunk = chunk if chunk.shape[1] == chunk_size else np.pad(chunk, ((0,0), (0, chunk_size-chunk.shape[1])))
+                chunk = torch.from_numpy(chunk).float().to(self.device)
+                emb = self.model.get_audio_embedding_from_data(x = chunk, use_tensor=True)
+                embeddings.append(emb)
+
+        # Concatenate the embeddings
+        emb = torch.cat(embeddings, dim=0) # [timeframes, 512]
+        return emb
+
+    def int16_to_float32(self, x):
+        return (x / 32767.0).astype(np.float32)
+
+    def float32_to_int16(self, x):
+        x = np.clip(x, a_min=-1., a_max=1.)
+        return (x * 32767.).astype(np.int16)
 
 class W2V2Model(ModelLoader):
     """
@@ -889,6 +996,8 @@ def get_all_models(audio_len: Optional[Union[float, int]] = None) -> list[ModelL
     - A list of all available models.
     """
     ms = [
+        MusicFM('FMA', audio_len=audio_len),
+        MusicFM('MSD', audio_len=audio_len),
         CLAPModel('2023', audio_len=audio_len),
         CLAPLaionModel('audio', audio_len=audio_len), CLAPLaionModel('music', audio_len=audio_len),
         VGGishModel(audio_len=audio_len), 
