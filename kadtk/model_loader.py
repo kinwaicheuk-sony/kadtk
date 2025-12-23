@@ -482,6 +482,7 @@ class CLAPLaionModel(ModelLoader):
 
         # Concatenate the embeddings
         emb = torch.cat(embeddings, dim=0) # [timeframes, 512]
+        # 30, 512
         return emb
 
     def int16_to_float32(self, x):
@@ -604,7 +605,7 @@ class MusicFM(ModelLoader):
     MusicFM model from https://github.com/minzwon/musicfm
     """
     
-    def __init__(self, type: Literal['FMA', 'MSD'], layer=7, limit_minutes=5, audio_len: Optional[Union[float, int]] = None):
+    def __init__(self, type: Literal['FMA', 'MSD'], layer=7, limit_minutes=1, audio_len: Optional[Union[float, int]] = None):
         super().__init__(f"musicfm-{type}" + ("" if layer == 7 else f"-{layer}"), 1024, 24000, audio_len=audio_len)
         self.type = type
         self.limit = limit_minutes * 60 * self.sr
@@ -647,7 +648,12 @@ class MusicFM(ModelLoader):
         with torch.no_grad():
             self.model.eval()
             emb = self.model.get_latent(audio, layer_ix=self.layer)
-        return emb
+            # (750, 1024)
+
+        # a quick hack to fix the huge time step problem
+        n_frame = 30
+        token_emb = nn.AdaptiveAvgPool1d(n_frame)(emb.transpose(1, 2)).transpose(1, 2)
+        return token_emb.squeeze(0)
 
     def int16_to_float32(self, x):
         return (x / 32767.0).astype(np.float32)

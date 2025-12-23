@@ -132,8 +132,10 @@ def median_pairwise_distance(x, subsample=None):
         distances = torch.sqrt(torch.sum((x[idx1] - x[idx2])**2, dim=1))
     else:
         # Compute all pairwise distances
+
         distances = torch.pdist(x)
-        
+        # musicfm: (150000, 1024)
+        # laion_clap audio: (9100,512)
     return torch.median(distances).item()
 
 
