@@ -64,6 +64,8 @@ kadtk-embeds -m wavlm-base -d {reference-set dir} {target-set dir} # will only s
 
 | Model | Name in KADtk | Description | Creator |
 | --- | --- | --- | --- |
+| [MusicFM](https://github.com/minzwon/musicfm) | `musicfm-fma` | MusicFM-FMA Pretrained using FMA-large data |  MinzWon |
+| [MusicFM](https://github.com/minzwon/musicfm) | `musicfm-msd` | MusicFM-MSD Pretrained with the entire Million Song Dataset | MinzWon | 
 | [CLAP](https://github.com/microsoft/CLAP) | `clap-2023` | general audio representation | Microsoft |
 | [CLAP](https://github.com/LAION-AI/CLAP) | `clap-laion-{audio/music}` | general audio, music representation | LAION |
 | [MERT](https://huggingface.co/m-a-p/MERT-v1-95M) | `MERT-v1-95M-{layer}` | music understanding | m-a-p |
