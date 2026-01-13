@@ -608,7 +608,7 @@ class MusicFM(ModelLoader):
     def __init__(self,
                  type: Literal['FMA', 'MSD'],
                  layer=7, 
-                 limit_minutes=1, 
+                 limit_minutes=9, 
                  audio_len: Optional[Union[float, int]] = None,
                  pooling_resolution_sec: int = 1):
         super().__init__(f"musicfm-{type}" + ("" if layer == 7 else f"-{layer}"), 1024, 24000, audio_len=audio_len)
@@ -637,8 +637,8 @@ class MusicFM(ModelLoader):
 
         self.model = MusicFM25Hz(
             is_flash=False,
-            stat_path=os.path.join(self.home_dir, "msd_stats.json"),
-            model_path=os.path.join(self.home_dir, "pretrained_msd.pt"),
+            stat_path=os.path.join(self.home_dir, f"{self.type}_stats.json"),
+            model_path=os.path.join(self.home_dir, f"pretrained_{self.type}.pt"),
 )
         self.model.to(self.device)
 
