@@ -97,6 +97,17 @@ def calc_kernel_audio_distance(
     
     # Compute kernel statistics for xy
     xy = x @ y.T
+    # xy.shape
+    # MusicFM (30000,1024) @ (1024,9300) -> (30000, 9300)    
+    # MERT (30000,768) @ (768, 9100) -> (30000, 9100)
+
+    # y_sqnorms:
+    # MERT (9100,)
+    # MusicFM (3000)
+
+    # x_sqnorms:
+    # MERT (30000,)
+    # MusicFM (30000,)
     d2_xy = x_sqnorms.unsqueeze(1) + y_sqnorms.unsqueeze(0) - 2 * xy # shape (m, n)
     k_xy = kernel(d2_xy)
     k_xy_mean = k_xy.mean()
@@ -134,7 +145,8 @@ def median_pairwise_distance(x, subsample=None):
         # Compute all pairwise distances
 
         distances = torch.pdist(x)
-        # musicfm: (150000, 1024)
+        # musicfm: (150000, 1024) after downsample -> (9300,1024)
+        # MERT: (9100,768)
         # laion_clap audio: (9100,512)
     return torch.median(distances).item()
 
@@ -182,6 +194,8 @@ class KernelAudioDistance:
         
         embd_bg = torch.tensor(embd_bg)
         embd_eval = torch.tensor(embd_eval)
+        # musicfm: (30000, 1024), (9300, 1024)
+        # MERT: (30000, 768), (9100,768)
         return calc_kernel_audio_distance(embd_bg, embd_eval, cache_dirs, self.device, self.bandwidth)
     
     def score_inf(self, baseline: PathLike, eval_files: list[Path], steps: int=25, min_n=500, raw: bool=False):
