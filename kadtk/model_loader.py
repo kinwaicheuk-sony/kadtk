@@ -605,12 +605,17 @@ class MusicFM(ModelLoader):
     MusicFM model from https://github.com/minzwon/musicfm
     """
     
-    def __init__(self, type: Literal['FMA', 'MSD'], layer=7, limit_minutes=1, audio_len: Optional[Union[float, int]] = None):
+    def __init__(self,
+                 type: Literal['FMA', 'MSD'],
+                 layer=7, 
+                 limit_minutes=1, 
+                 audio_len: Optional[Union[float, int]] = None,
+                 pooling_resolution_sec: int = 1):
         super().__init__(f"musicfm-{type}" + ("" if layer == 7 else f"-{layer}"), 1024, 24000, audio_len=audio_len)
         self.type = type
         self.limit = limit_minutes * 60 * self.sr
         self.layer = layer
-
+        self.pooling_resolution_sec = pooling_resolution_sec
         if type == 'fma':
             url_dict = {'json': 'https://huggingface.co/minzwon/MusicFM/resolve/main/fma_stats.json',
                         'pt': 'https://huggingface.co/minzwon/MusicFM/resolve/main/pretrained_fma.pt'}
@@ -638,6 +643,8 @@ class MusicFM(ModelLoader):
         self.model.to(self.device)
 
     def _get_embedding(self, audio: np.ndarray) -> torch.Tensor:
+        audio_dur = audio.shape[0] / self.sr
+        pooling_resolution = audio_dur / self.pooling_resolution_sec
         # Limit to 9 minutes
         if audio.shape[0] > self.limit:
             log.warning(f"Audio is too long ({audio.shape[0] / self.sr / 60:.2f} minutes > {self.limit / self.sr / 60:.2f} minutes). Truncating.")
@@ -651,8 +658,11 @@ class MusicFM(ModelLoader):
             # (750, 1024)
 
         # a quick hack to fix the huge time step problem
-        n_frame = 30
-        token_emb = nn.AdaptiveAvgPool1d(n_frame)(emb.transpose(1, 2)).transpose(1, 2)
+        # n_frame = 30
+        # token_emb = nn.AdaptiveAvgPool1d(n_frame)(emb.transpose(1, 2)).transpose(1, 2)
+        stride = int(emb.shape[1] / pooling_resolution)
+        token_emb = emb.unfold(1, stride, stride).mean(-1)        
+
         return token_emb.squeeze(0)
 
     def int16_to_float32(self, x):
